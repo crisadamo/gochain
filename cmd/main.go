@@ -2,6 +2,7 @@ package main
 
 import (
     "github.com/crisadamo/gochain"
+    "log"
     "net/http"
     "os"
     "strings"
@@ -24,5 +25,7 @@ func main() {
     mux.HandleFunc("/transactions/new", api.TransactionHandler)
     mux.HandleFunc("/mine", api.MineHandler)
     mux.HandleFunc("/chain", api.ChainHandler)
+
+    log.Printf("Starting gochain on port %s\n", serverPort)
     http.ListenAndServe(":"+serverPort, mux)
 }

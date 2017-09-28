@@ -4,6 +4,7 @@ import (
     "encoding/json"
     "fmt"
     "io/ioutil"
+    "log"
     "net/http"
 )
 
@@ -22,6 +23,8 @@ func (gca *GoChainAPI) TransactionHandler(w http.ResponseWriter, r *http.Request
         return
     }
 
+    log.Printf("Adding transaction to the blockchain...\n")
+
     bytes, err := ioutil.ReadAll(r.Body)
 
     var tx Transaction
@@ -35,7 +38,9 @@ func (gca *GoChainAPI) TransactionHandler(w http.ResponseWriter, r *http.Request
     status := http.StatusCreated
     if err != nil {
         status = http.StatusInternalServerError
-        enc, _ = json.Marshal(map[string]string{"error": "fail to add transaction"})
+        msg := "Fail to add transaction to the blockchain"
+        log.Println(msg)
+        enc, _ = json.Marshal(map[string]string{"error": msg})
     }
 
     w.Header().Set("Content-Type", "application/json")
@@ -48,6 +53,8 @@ func (gca *GoChainAPI) MineHandler(w http.ResponseWriter, r *http.Request) {
         w.WriteHeader(http.StatusMethodNotAllowed)
         return
     }
+
+    log.Println("Mining some coins")
 
     // We run the proof of work algorithm to get the next proof...
     lastBlock := gca.blockchain.LastBlock()
@@ -70,7 +77,9 @@ func (gca *GoChainAPI) MineHandler(w http.ResponseWriter, r *http.Request) {
     status := http.StatusOK
     if err != nil {
         status = http.StatusInternalServerError
-        enc, _ = json.Marshal(map[string]string{"error": "fail to mine"})
+        msg := "Fail to mine coins"
+        log.Println(msg)
+        enc, _ = json.Marshal(map[string]string{"error": msg})
     }
 
     w.Header().Set("Content-Type", "application/json")
@@ -84,6 +93,8 @@ func (gca *GoChainAPI) ChainHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    log.Println("Blockchain requested")
+
     enc, err := json.Marshal(map[string]interface{}{
         "chain":  gca.blockchain.chain,
         "length": len(gca.blockchain.chain),
@@ -92,7 +103,9 @@ func (gca *GoChainAPI) ChainHandler(w http.ResponseWriter, r *http.Request) {
     status := http.StatusOK
     if err != nil {
         status = http.StatusInternalServerError
-        enc, _ = json.Marshal(map[string]string{"error": "fail to generate the blockchain"})
+        msg := "Fail to generate the blockchain"
+        log.Println(msg)
+        enc, _ = json.Marshal(map[string]string{"error": msg})
     }
 
     w.Header().Set("Content-Type", "application/json")
@@ -105,6 +118,8 @@ func (gca *GoChainAPI) RegisterNodeHandler(w http.ResponseWriter, r *http.Reques
         w.WriteHeader(http.StatusMethodNotAllowed)
         return
     }
+
+    log.Println("Adding node to the blockchain")
 
     bytes, err := ioutil.ReadAll(r.Body)
     var body map[string][]string
@@ -122,7 +137,9 @@ func (gca *GoChainAPI) RegisterNodeHandler(w http.ResponseWriter, r *http.Reques
     status := http.StatusCreated
     if err != nil {
         status = http.StatusInternalServerError
-        enc, _ = json.Marshal(map[string]string{"error": "fail to register nodes"})
+        msg := "fail to register nodes"
+        log.Println(msg)
+        enc, _ = json.Marshal(map[string]string{"error": msg})
     }
 
     w.Header().Set("Content-Type", "application/json")
@@ -135,6 +152,8 @@ func (gca *GoChainAPI) ConsensusHandler(w http.ResponseWriter, r *http.Request) 
         w.WriteHeader(http.StatusMethodNotAllowed)
         return
     }
+
+    log.Println("Resolving blockchain differences by consensus")
 
     var resp map[string]interface{}
     if gca.blockchain.ResolveConflicts() {
@@ -153,7 +172,9 @@ func (gca *GoChainAPI) ConsensusHandler(w http.ResponseWriter, r *http.Request) 
     status := http.StatusOK
     if err != nil {
         status = http.StatusInternalServerError
-        enc, _ = json.Marshal(map[string]string{"error": "fail to generate the blockchain"})
+        msg := "fail to resolve the blockchain differences"
+        log.Println(msg)
+        enc, _ = json.Marshal(map[string]string{"error": msg})
     }
 
     w.Header().Set("Content-Type", "application/json")
