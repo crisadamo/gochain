@@ -140,16 +140,16 @@ func (bc *Blockchain) ResolveConflicts() bool {
     maxLength := len(bc.chain)
 
     // Grab and verify the chains from all the nodes in our network
-    for node, _ := range neighbours.set {
-        chain, length, err := findExternalChain(node)
+    for node := range neighbours.set {
+        otherBlockchain, err := findExternalChain(node)
         if err != nil {
             continue
         }
 
         // Check if the length is longer and the chain is valid
-        if length > maxLength && bc.ValidChain(chain) {
-            maxLength = length
-            newChain = chain
+        if otherBlockchain.Length > maxLength && bc.ValidChain(otherBlockchain.Chain) {
+            maxLength = otherBlockchain.Length
+            newChain = otherBlockchain.Chain
         }
     }
     // Replace our chain if we discovered a new, valid chain longer than ours
@@ -167,6 +167,7 @@ func NewBlockchain() *Blockchain {
         transactions: make([]*Transaction, 0),
         nodes:        NewStringSet(),
     }
+    // Initial, sentinel block
     newBlockchain.NewBlock(100, "1")
     return newBlockchain
 }
@@ -177,24 +178,21 @@ func computeHashForBlock(block Block) string {
     return ComputeHashSha256(buf.Bytes())
 }
 
-type chainResponse struct {
+type blockchainInfo struct {
     Length int      `json:"length"`
     Chain  []*Block `json:"chain"`
 }
 
-func findExternalChain(address string) ([]*Block, int, error) {
+func findExternalChain(address string) (blockchainInfo, error) {
     response, err := http.Get(fmt.Sprintf("http://%s/chain", address))
     if err == nil && response.StatusCode == http.StatusOK {
-        bytes, _ := ioutil.ReadAll(response.Body)
+        b, _ := ioutil.ReadAll(response.Body)
 
-        var resp chainResponse
-        if err := json.Unmarshal(bytes, &resp); err != nil {
-            return nil, -1, err
+        var resp blockchainInfo
+        if err := json.Unmarshal(b, &resp); err != nil {
+            return blockchainInfo{}, err
         }
-
-        length := resp.Length
-        chain := resp.Chain
-        return chain, length, nil
+        return resp, nil
     }
-    return nil, -1, err
+    return blockchainInfo{}, err
 }
