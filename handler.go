@@ -3,181 +3,169 @@ package gochain
 import (
     "encoding/json"
     "fmt"
-    "io/ioutil"
+    "io"
     "log"
     "net/http"
 )
 
-func NewGoChainAPI(blockchain *Blockchain, nodeID string) GoChainAPI {
-    return GoChainAPI{blockchain, nodeID}
+func NewHandler(blockchain *Blockchain, nodeID string) http.Handler {
+    h := handler{blockchain, nodeID}
+
+    mux := http.NewServeMux()
+    mux.HandleFunc("/nodes/register", buildResponse(h.RegisterNode))
+    mux.HandleFunc("/nodes/resolve", buildResponse(h.ResolveConflicts))
+    mux.HandleFunc("/transactions/new", buildResponse(h.AddTransaction))
+    mux.HandleFunc("/mine", buildResponse(h.Mine))
+    mux.HandleFunc("/chain", buildResponse(h.Blockchain))
+    return mux
 }
 
-type GoChainAPI struct {
+type handler struct {
     blockchain *Blockchain
     nodeId     string
 }
 
-func (gca *GoChainAPI) TransactionHandler(w http.ResponseWriter, r *http.Request) {
+type response struct {
+    value      interface{}
+    statusCode int
+    err        error
+}
+
+func buildResponse(h func(io.Writer, *http.Request) response) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        resp := h(w, r)
+        msg := resp.value
+        if resp.err != nil {
+            msg = resp.err.Error()
+        }
+        w.WriteHeader(resp.statusCode)
+        w.Header().Set("Content-Type", "application/json")
+        if err := json.NewEncoder(w).Encode(msg); err != nil {
+            log.Printf("could not encode response to output: %v", err)
+        }
+    }
+}
+
+func (h *handler) AddTransaction(w io.Writer, r *http.Request) response {
     if r.Method != http.MethodPost {
-        w.WriteHeader(http.StatusMethodNotAllowed)
-        return
+        return response{
+            nil,
+            http.StatusMethodNotAllowed,
+            fmt.Errorf("method %s not allowd", r.Method),
+        }
     }
 
     log.Printf("Adding transaction to the blockchain...\n")
 
-    bytes, err := ioutil.ReadAll(r.Body)
-
     var tx Transaction
-    err = json.Unmarshal(bytes, &tx)
-    index := gca.blockchain.NewTransaction(tx)
+    err := json.NewDecoder(r.Body).Decode(&tx)
+    index := h.blockchain.NewTransaction(tx)
 
-    enc, _ := json.Marshal(map[string]string{
+    resp := map[string]string{
         "message": fmt.Sprintf("Transaction will be added to Block %d", index),
-    })
+    }
 
     status := http.StatusCreated
     if err != nil {
         status = http.StatusInternalServerError
-        msg := "Fail to add transaction to the blockchain"
-        log.Println(msg)
-        enc, _ = json.Marshal(map[string]string{"error": msg})
+        log.Printf("there was an error when trying to add a transaction %v\n", err)
+        err = fmt.Errorf("fail to add transaction to the blockchain")
     }
 
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(status)
-    w.Write(enc)
+    return response{resp, status, err}
 }
 
-func (gca *GoChainAPI) MineHandler(w http.ResponseWriter, r *http.Request) {
+func (h *handler) Mine(w io.Writer, r *http.Request) response {
     if r.Method != http.MethodGet {
-        w.WriteHeader(http.StatusMethodNotAllowed)
-        return
+        return response{
+            nil,
+            http.StatusMethodNotAllowed,
+            fmt.Errorf("method %s not allowd", r.Method),
+        }
     }
 
     log.Println("Mining some coins")
 
     // We run the proof of work algorithm to get the next proof...
-    lastBlock := gca.blockchain.LastBlock()
+    lastBlock := h.blockchain.LastBlock()
     lastProof := lastBlock.Proof
-    proof := gca.blockchain.ProofOfWork(lastProof)
+    proof := h.blockchain.ProofOfWork(lastProof)
 
     // We must receive a reward for finding the proof.
     // The sender is "0" to signify that this node has mined a new coin.
-    newTX := Transaction{Sender: "0", Recipient: gca.nodeId, Amount: 1}
-    gca.blockchain.NewTransaction(newTX)
+    newTX := Transaction{Sender: "0", Recipient: h.nodeId, Amount: 1}
+    h.blockchain.NewTransaction(newTX)
 
     // Forge the new Block by adding it to the chain
-    block := gca.blockchain.NewBlock(proof, "")
+    block := h.blockchain.NewBlock(proof, "")
 
-    enc, err := json.Marshal(map[string]interface{}{
-        "message": "New Block Forged",
-        "block":   block,
-    })
-
-    status := http.StatusOK
-    if err != nil {
-        status = http.StatusInternalServerError
-        msg := "Fail to mine coins"
-        log.Println(msg)
-        enc, _ = json.Marshal(map[string]string{"error": msg})
-    }
-
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(status)
-    w.Write(enc)
+    resp := map[string]interface{}{"message": "New Block Forged", "block": block}
+    return response{resp, http.StatusOK, nil}
 }
 
-func (gca *GoChainAPI) ChainHandler(w http.ResponseWriter, r *http.Request) {
+func (h *handler) Blockchain(w io.Writer, r *http.Request) response {
     if r.Method != http.MethodGet {
-        w.WriteHeader(http.StatusMethodNotAllowed)
-        return
+        return response{
+            nil,
+            http.StatusMethodNotAllowed,
+            fmt.Errorf("method %s not allowd", r.Method),
+        }
     }
-
     log.Println("Blockchain requested")
 
-    enc, err := json.Marshal(map[string]interface{}{
-        "chain":  gca.blockchain.chain,
-        "length": len(gca.blockchain.chain),
-    })
-
-    status := http.StatusOK
-    if err != nil {
-        status = http.StatusInternalServerError
-        msg := "Fail to generate the blockchain"
-        log.Println(msg)
-        enc, _ = json.Marshal(map[string]string{"error": msg})
-    }
-
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(status)
-    w.Write(enc)
+    resp := map[string]interface{}{"chain": h.blockchain.chain, "length": len(h.blockchain.chain)}
+    return response{resp, http.StatusOK, nil}
 }
 
-func (gca *GoChainAPI) RegisterNodeHandler(w http.ResponseWriter, r *http.Request) {
+func (h *handler) RegisterNode(w io.Writer, r *http.Request) response {
     if r.Method != http.MethodPost {
-        w.WriteHeader(http.StatusMethodNotAllowed)
-        return
+        return response{
+            nil,
+            http.StatusMethodNotAllowed,
+            fmt.Errorf("method %s not allowd", r.Method),
+        }
     }
 
     log.Println("Adding node to the blockchain")
 
-    bytes, err := ioutil.ReadAll(r.Body)
     var body map[string][]string
-    err = json.Unmarshal(bytes, &body)
+    err := json.NewDecoder(r.Body).Decode(&body)
 
     for _, node := range body["nodes"] {
-        gca.blockchain.RegisterNode(node)
+        h.blockchain.RegisterNode(node)
     }
 
-    enc, _ := json.Marshal(map[string]interface{}{
+    resp := map[string]interface{}{
         "message": "New nodes have been added",
-        "nodes":   gca.blockchain.nodes.Keys(),
-    })
+        "nodes":   h.blockchain.nodes.Keys(),
+    }
 
     status := http.StatusCreated
     if err != nil {
         status = http.StatusInternalServerError
-        msg := "fail to register nodes"
-        log.Println(msg)
-        enc, _ = json.Marshal(map[string]string{"error": msg})
+        err = fmt.Errorf("fail to register nodes")
+        log.Printf("there was an error when trying to register a new node %v\n", err)
     }
 
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(status)
-    w.Write(enc)
+    return response{resp, status, err}
 }
 
-func (gca *GoChainAPI) ConsensusHandler(w http.ResponseWriter, r *http.Request) {
+func (h *handler) ResolveConflicts(w io.Writer, r *http.Request) response {
     if r.Method != http.MethodGet {
-        w.WriteHeader(http.StatusMethodNotAllowed)
-        return
+        return response{
+            nil,
+            http.StatusMethodNotAllowed,
+            fmt.Errorf("method %s not allowd", r.Method),
+        }
     }
 
     log.Println("Resolving blockchain differences by consensus")
 
-    var resp map[string]interface{}
-    if gca.blockchain.ResolveConflicts() {
-        resp = map[string]interface{}{
-            "message": "Our chain was replaced",
-            "chain":   gca.blockchain.chain,
-        }
-    } else {
-        resp = map[string]interface{}{
-            "message": "Our chain is authoritative",
-            "chain":   gca.blockchain.chain,
-        }
+    msg := "Our chain is authoritative"
+    if h.blockchain.ResolveConflicts() {
+        msg = "Our chain was replaced"
     }
 
-    enc, err := json.Marshal(resp)
-    status := http.StatusOK
-    if err != nil {
-        status = http.StatusInternalServerError
-        msg := "fail to resolve the blockchain differences"
-        log.Println(msg)
-        enc, _ = json.Marshal(map[string]string{"error": msg})
-    }
-
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(status)
-    w.Write(enc)
+    resp := map[string]interface{}{"message": msg, "chain": h.blockchain.chain}
+    return response{resp, http.StatusOK, nil}
 }
