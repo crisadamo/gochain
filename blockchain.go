@@ -5,7 +5,6 @@ import (
     "encoding/binary"
     "encoding/json"
     "fmt"
-    "io/ioutil"
     "net/http"
     "net/url"
     "time"
@@ -13,7 +12,7 @@ import (
 
 type IndexId int64
 
-type IBlockchain interface {
+type BlockchainService interface {
     // Add a new node to the list of nodes
     RegisterNode(address string) bool
 
@@ -28,7 +27,7 @@ type IBlockchain interface {
     NewBlock(proof int64, previousHash string) Block
 
     // Creates a new transaction to go into the next mined Block
-    NewTransaction(tx Transaction) IndexId
+    NewTransaction(tx Transaction) int64
 
     // Returns the last block on the chain
     LastBlock() Block
@@ -43,7 +42,7 @@ type IBlockchain interface {
 }
 
 type Block struct {
-    Index        IndexId       `json:"index"`
+    Index        int64         `json:"index"`
     Timestamp    int64         `json:"timestamp"`
     Transactions []Transaction `json:"transactions"`
     Proof        int64         `json:"proof"`
@@ -70,7 +69,7 @@ func (bc *Blockchain) NewBlock(proof int64, previousHash string) Block {
     }
 
     newBlock := Block{
-        Index:        IndexId(len(bc.chain) + 1),
+        Index:        int64(len(bc.chain) + 1),
         Timestamp:    time.Now().UnixNano(),
         Transactions: bc.transactions,
         Proof:        proof,
@@ -82,7 +81,7 @@ func (bc *Blockchain) NewBlock(proof int64, previousHash string) Block {
     return newBlock
 }
 
-func (bc *Blockchain) NewTransaction(tx Transaction) IndexId {
+func (bc *Blockchain) NewTransaction(tx Transaction) int64 {
     bc.transactions = append(bc.transactions, tx)
     return bc.LastBlock().Index + 1
 }
@@ -186,13 +185,11 @@ type blockchainInfo struct {
 func findExternalChain(address string) (blockchainInfo, error) {
     response, err := http.Get(fmt.Sprintf("http://%s/chain", address))
     if err == nil && response.StatusCode == http.StatusOK {
-        b, _ := ioutil.ReadAll(response.Body)
-
-        var resp blockchainInfo
-        if err := json.Unmarshal(b, &resp); err != nil {
+        var bi blockchainInfo
+        if err := json.NewDecoder(response.Body).Decode(&bi); err != nil {
             return blockchainInfo{}, err
         }
-        return resp, nil
+        return bi, nil
     }
     return blockchainInfo{}, err
 }
