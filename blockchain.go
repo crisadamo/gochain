@@ -28,7 +28,7 @@ type IBlockchain interface {
     NewBlock(proof int64, previousHash string) *Block
 
     // Creates a new transaction to go into the next mined Block
-    NewTransaction(sender string, recipient string, amount int64) IndexId
+    NewTransaction(tx Transaction) IndexId
 
     // Returns the last block on the chain
     LastBlock() *Block
