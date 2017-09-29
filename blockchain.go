@@ -10,8 +10,6 @@ import (
     "time"
 )
 
-type IndexId int64
-
 type BlockchainService interface {
     // Add a new node to the list of nodes
     RegisterNode(address string) bool
@@ -99,7 +97,7 @@ func (bc *Blockchain) ProofOfWork(lastProof int64) int64 {
 }
 
 func (bc *Blockchain) ValidProof(lastProof, proof int64) bool {
-    guess := fmt.Sprintf("%i%i", lastProof, proof)
+    guess := fmt.Sprintf("%d%d", lastProof, proof)
     guessHash := ComputeHashSha256([]byte(guess))
     return guessHash[:4] == "0000"
 }
@@ -139,7 +137,7 @@ func (bc *Blockchain) ResolveConflicts() bool {
     maxLength := len(bc.chain)
 
     // Grab and verify the chains from all the nodes in our network
-    for node := range neighbours.set {
+    for _, node := range neighbours.Keys() {
         otherBlockchain, err := findExternalChain(node)
         if err != nil {
             continue
