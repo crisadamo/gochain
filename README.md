@@ -17,7 +17,7 @@ $ go build -o gochain
 
 You can start as many nodes as you want with the following command
 
-`./gochain <port-number>`
+`./gochain -port=<port-number>`
 
 
 ## Endpoints
