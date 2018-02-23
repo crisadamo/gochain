@@ -8,6 +8,7 @@ import (
     "net/http"
     "net/url"
     "time"
+    "log"
 )
 
 type BlockchainService interface {
@@ -171,7 +172,16 @@ func NewBlockchain() *Blockchain {
 
 func computeHashForBlock(block Block) string {
     var buf bytes.Buffer
-    binary.Write(&buf, binary.BigEndian, block)
+    // Data for binary.Write must be a fixed-size value or a slice of fixed-size values,
+    // or a pointer to such data.
+    jsonblock, marshalErr := json.Marshal(block)
+    if marshalErr != nil {
+        log.Fatalf("Could not marshal block: %s", marshalErr.Error())
+    }
+    hashingErr := binary.Write(&buf, binary.BigEndian, jsonblock)
+    if hashingErr != nil {
+        log.Fatalf("Could not hash block: %s", hashingErr.Error())
+    }
     return ComputeHashSha256(buf.Bytes())
 }
 
